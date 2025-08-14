@@ -24,7 +24,7 @@ llm_model = AzureChatOpenAI(
     max_tokens=300,
 )
 
-# Prompt specifically for medical assistant
+# Prompt template
 chat_prompt = ChatPromptTemplate.from_template("""
 You are a professional, empathetic, and knowledgeable medical assistant.
 Always provide medically accurate, clear, and concise information.
@@ -35,7 +35,7 @@ Patient's question: {question}
 Answer:
 """)
 
-# Memory to keep conversation context
+# Memory to store conversation
 memory = ConversationSummaryBufferMemory(
     llm=llm_model,
     max_token_limit=1000,
@@ -52,11 +52,11 @@ llm_chain = LLMChain(
     memory=memory,
 )
 
-# Pydantic model for API request
+# Request model
 class ChatRequest(BaseModel):
     question: str
 
-# Chat endpoint
+# POST endpoint for chat
 @app.post("/chat")
 def chat(request: ChatRequest):
     result = llm_chain.invoke({"question": request.question})
@@ -66,7 +66,7 @@ def chat(request: ChatRequest):
         "memory_summary": memory.buffer
     }
 
-# Health check endpoint
+# GET endpoint for health check
 @app.get("/")
 def root():
     return {"message": "Medical Assistant API is running."}

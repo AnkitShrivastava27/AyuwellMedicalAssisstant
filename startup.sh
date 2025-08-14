@@ -1,15 +1,10 @@
 #!/bin/bash
 
-# Exit immediately if any command fails
+# Exit on error
 set -e
 
 # Install dependencies
-echo "Installing Python dependencies..."
 pip install --no-cache-dir -r requirements.txt
 
-# Run FastAPI app with Gunicorn + Uvicorn workers for production
-echo "Starting Medical Assistant API on Azure..."
-gunicorn main:app \
-    --workers 4 \
-    --worker-class uvicorn.workers.UvicornWorker \
-    --bind=0.0.0.0:${PORT:-8000}
+# Start FastAPI with Uvicorn
+exec uvicorn main:app --host 0.0.0.0 --port 8000
