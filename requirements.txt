@@ -4,6 +4,6 @@ python-dotenv
 langchain
 langchain-community
 openai
-azure-ai-openai
+
 langchain-openai
 langchain-azure
