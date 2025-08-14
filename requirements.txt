@@ -6,4 +6,3 @@ langchain-community
 openai
 
 langchain-openai
-langchain-azure
