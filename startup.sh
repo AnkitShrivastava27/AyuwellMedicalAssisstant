@@ -6,6 +6,6 @@ echo ">> Starting Medical Assistant API..."
 # Use Azure-provided port
 : "${PORT:=8000}"
 
-exec uvicorn main:app \
+exec uvicorn app:app \
   --host 0.0.0.0 \
   --port "$PORT"
