@@ -1,70 +1,72 @@
 import os
-import streamlit as st
 from dotenv import load_dotenv
+from fastapi import FastAPI
+from pydantic import BaseModel
 from langchain_community.chat_models import AzureChatOpenAI
 from langchain.prompts import ChatPromptTemplate
 from langchain.chains import LLMChain
 from langchain.memory import ConversationSummaryBufferMemory
 
-# Load environment variables
+# Load environment variables from .env
 load_dotenv()
 
-# Initialize session state on first load
-if "memory" not in st.session_state:
-    # LLM setup
-    llm_model = AzureChatOpenAI(
-        azure_deployment=os.getenv("AZURE_OPENAI_DEPLOYMENT_NAME"),
-        azure_endpoint=os.getenv("AZURE_OPENAI_ENDPOINT"),
-        api_key=os.getenv("AZURE_OPENAI_KEY"),
-        api_version=os.getenv("AZURE_OPENAI_VERSION"),
-        temperature=0.7,
-        top_p=0.9,
-        max_tokens=100,
-    )
+# Initialize FastAPI app
+app = FastAPI(title="Medical Assistant API", version="1.0")
 
-    # Prompt
-    chat_prompt = ChatPromptTemplate.from_template("""
-You are a helpful assistant.
+# Initialize LLM only once
+llm_model = AzureChatOpenAI(
+    azure_deployment=os.getenv("AZURE_OPENAI_DEPLOYMENT_NAME"),
+    azure_endpoint=os.getenv("AZURE_OPENAI_ENDPOINT"),
+    api_key=os.getenv("AZURE_OPENAI_KEY"),
+    api_version=os.getenv("AZURE_OPENAI_VERSION"),
+    temperature=0.3,  # Lower for factual accuracy
+    top_p=0.9,
+    max_tokens=300,
+)
+
+# Prompt specifically for medical assistant
+chat_prompt = ChatPromptTemplate.from_template("""
+You are a professional, empathetic, and knowledgeable medical assistant.
+Always provide medically accurate, clear, and concise information.
+If the question is outside medical scope, politely decline.
+
 {chat_history}
-User question: {question}
+Patient's question: {question}
 Answer:
 """)
 
-    # Memory
-    memory = ConversationSummaryBufferMemory(
-        llm=llm_model,
-        max_token_limit=1000,
-        return_messages=True,
-        input_key="question",
-        output_key="text",
-        memory_key="chat_history",
-    )
+# Memory to keep conversation context
+memory = ConversationSummaryBufferMemory(
+    llm=llm_model,
+    max_token_limit=1000,
+    return_messages=True,
+    input_key="question",
+    output_key="text",
+    memory_key="chat_history",
+)
 
-    # Chain
-    llm_chain = LLMChain(
-        llm=llm_model,
-        prompt=chat_prompt,
-        memory=memory,
-    )
+# Create LLM chain
+llm_chain = LLMChain(
+    llm=llm_model,
+    prompt=chat_prompt,
+    memory=memory,
+)
 
-    st.session_state.llm_chain = llm_chain
-    st.session_state.memory = memory
-    st.session_state.chat_history = []
+# Pydantic model for API request
+class ChatRequest(BaseModel):
+    question: str
 
-# Streamlit UI
-st.title("💬 Chat with Azure GPT")
+# Chat endpoint
+@app.post("/chat")
+def chat(request: ChatRequest):
+    result = llm_chain.invoke({"question": request.question})
+    return {
+        "user": request.question,
+        "assistant": result["text"],
+        "memory_summary": memory.buffer
+    }
 
-user_input = st.text_input("Ask something...", key="input")
-
-if user_input:
-    result = st.session_state.llm_chain.invoke({"question": user_input})
-    st.session_state.chat_history.append(("You", user_input))
-    st.session_state.chat_history.append(("Assistant", result["text"]))
-
-# Display chat history
-for speaker, msg in st.session_state.chat_history:
-    st.markdown(f"**{speaker}:** {msg}")
-
-# Optional: show summarized memory
-with st.expander("🔍 View memory summary"):
-    st.write(st.session_state.memory.buffer)
+# Health check endpoint
+@app.get("/")
+def root():
+    return {"message": "Medical Assistant API is running."}
