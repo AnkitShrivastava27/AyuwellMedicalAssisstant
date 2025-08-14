@@ -1,6 +1,6 @@
 import os
 from dotenv import load_dotenv
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from langchain_community.chat_models import AzureChatOpenAI
@@ -38,9 +38,10 @@ llm_model = AzureChatOpenAI(
 chat_prompt = ChatPromptTemplate.from_template("""
 You are a professional, empathetic, and knowledgeable medical assistant.
 Always provide medically accurate, clear, and concise information.
-If the question is outside medical scope, politely decline.and at last
-If you don't know the answer, say "I don't know" instead of making up information.and if you answer the question,then at last add a new line for i case 
-                                               of severe problem please consult a doctor .
+If the question is outside medical scope, politely decline.
+If you don't know the answer, say "I don't know" instead of making up information.
+If you answer the question, then at last add a new line:
+In case of severe problem please consult a doctor.
 
 {chat_history}
 Patient's question: {question}
@@ -68,26 +69,23 @@ llm_chain = LLMChain(
 class ChatRequest(BaseModel):
     question: str
 
-# Combined GET + POST chat endpoint
-@app.api_route("/chat/", methods=["GET", "POST"])
-async def chat(request: Request):
-    if request.method == "GET":
+# POST chat endpoint
+@app.post("/chat/")
+async def chat(chat_request: ChatRequest):
+    question = chat_request.question
+
+    if not question.strip():
+        raise HTTPException(status_code=400, detail="Question cannot be empty.")
+
+    try:
+        result = llm_chain.invoke({"question": question})
         return {
-            "message": "Welcome to Medical Assistant API. Send a POST request with JSON: {'question': 'your query'}"
+            "user": question,
+            "assistant": result["text"],
+            "memory_summary": memory.buffer
         }
-
-    # Handle POST request
-    body = await request.json()
-    question = body.get("question")
-    if not question:
-        return {"error": "Missing 'question' in request body"}
-
-    result = llm_chain.invoke({"question": question})
-    return {
-        "user": question,
-        "assistant": result["text"],
-        "memory_summary": memory.buffer
-    }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"LLM error: {str(e)}")
 
 # Root health check
 @app.get("/")
