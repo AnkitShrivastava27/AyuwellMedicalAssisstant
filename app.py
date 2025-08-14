@@ -19,7 +19,7 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],  # You can restrict to your Flutter app domain
     allow_credentials=True,
-    allow_methods=["*"],
+    allow_methods=["get", "post", "put", "delete"],
     allow_headers=["*"],
 )
 
