@@ -14,13 +14,13 @@ load_dotenv()
 # Initialize FastAPI
 app = FastAPI(title="Medical Assistant API", version="1.0")
 
-# Fix CORS config — allow all methods including OPTIONS
+# CORS setup
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # or restrict to your frontend domain
+    allow_origins=["*"],       # You can replace with your frontend URL for security
     allow_credentials=True,
-    allow_methods=["*"],  # allow all HTTP methods
-    allow_headers=["*"],  # allow all headers
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 # LLM setup
@@ -34,6 +34,7 @@ llm_model = AzureChatOpenAI(
     max_tokens=300,
 )
 
+# Prompt template
 chat_prompt = ChatPromptTemplate.from_template("""
 You are a professional, empathetic, and knowledgeable medical assistant.
 Always provide medically accurate, clear, and concise information.
@@ -47,6 +48,7 @@ Patient's question: {question}
 Answer:
 """)
 
+# Memory
 memory = ConversationSummaryBufferMemory(
     llm=llm_model,
     max_token_limit=1000,
@@ -56,6 +58,7 @@ memory = ConversationSummaryBufferMemory(
     memory_key="chat_history",
 )
 
+# LLM chain
 llm_chain = LLMChain(
     llm=llm_model,
     prompt=chat_prompt,
@@ -66,11 +69,11 @@ llm_chain = LLMChain(
 class ChatRequest(BaseModel):
     question: str
 
-# Chat endpoint (no trailing slash to avoid POST redirect issues)
+# Accept both /chat and /chat/ to prevent 405 errors
 @app.post("/chat")
+@app.post("/chat/")
 async def chat(chat_request: ChatRequest):
     question = chat_request.question.strip()
-
     if not question:
         raise HTTPException(status_code=400, detail="Question cannot be empty.")
 
@@ -85,6 +88,6 @@ async def chat(chat_request: ChatRequest):
         raise HTTPException(status_code=500, detail=f"LLM error: {str(e)}")
 
 # Root health check
-@app.get("/")
-def root():
+@app.get("/test")
+async def root():
     return {"message": "Medical Assistant API is running."}
