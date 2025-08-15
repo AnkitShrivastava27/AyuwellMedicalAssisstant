@@ -8,22 +8,19 @@ from langchain.prompts import ChatPromptTemplate
 from langchain.chains import LLMChain
 from langchain.memory import ConversationSummaryBufferMemory
 
-# Load environment variables
+
 load_dotenv()
 
-# Initialize FastAPI
 app = FastAPI(title="Medical Assistant API", version="1.0")
 
-# CORS setup
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],       # You can replace with your frontend URL for security
+    allow_origins=["*"],  
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# LLM setup
 llm_model = AzureChatOpenAI(
     azure_deployment=os.getenv("AZURE_OPENAI_DEPLOYMENT_NAME"),
     azure_endpoint=os.getenv("AZURE_OPENAI_ENDPOINT"),
@@ -65,11 +62,10 @@ llm_chain = LLMChain(
     memory=memory,
 )
 
-# Request model
+
 class ChatRequest(BaseModel):
     question: str
 
-# Accept both /chat and /chat/ to prevent 405 errors
 @app.post("/chat")
 @app.post("/chat/")
 async def chat(chat_request: ChatRequest):
@@ -79,15 +75,19 @@ async def chat(chat_request: ChatRequest):
 
     try:
         result = llm_chain.invoke({"question": question})
-        return {
-            "user": question,
-            "assistant": result["text"],
-            "memory_summary": memory.buffer
-        }
+        
+        clean_answer = " ".join(result["text"].split())
+        return {"answer": clean_answer}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"LLM error: {str(e)}")
 
-# Root health check
-@app.get("/test")
+
+@app.get("/")
 async def root():
     return {"message": "Medical Assistant API is running."}
+
+# Entry point for local and Azure
+if __name__ == "__main__":
+    import uvicorn
+    port = int(os.environ.get("PORT", 8000))  
+    uvicorn.run("app:app", host="0.0.0.0", port=port)
