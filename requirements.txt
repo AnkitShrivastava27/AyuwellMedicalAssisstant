@@ -1,7 +1,8 @@
 fastapi
-uvicorn
+uvicorn[standard]
 python-dotenv
 langchain
 langchain-community
 openai
 pydantic
+gunicorn
