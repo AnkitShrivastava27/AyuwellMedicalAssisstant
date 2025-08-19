@@ -1,93 +1,63 @@
 import os
-from dotenv import load_dotenv
+import google.generativeai as genai
 from fastapi import FastAPI, HTTPException
-from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-from langchain_community.chat_models import AzureChatOpenAI
-from langchain.prompts import ChatPromptTemplate
-from langchain.chains import LLMChain
-from langchain.memory import ConversationSummaryBufferMemory
+from dotenv import load_dotenv
 
-
+# Load environment variables from .env file
 load_dotenv()
 
-app = FastAPI(title="Medical Assistant API", version="1.0")
+# Configure the Gemini API key
+API_KEY = os.getenv("GOOGLE_API_KEY")
+if not API_KEY:
+    raise RuntimeError("GOOGLE_API_KEY environment variable not set.")
+genai.configure(api_key=API_KEY)
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],  
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+# Define the system prompt (medical assistant role with word limit)
+SYSTEM_PROMPT = (
+    "You are a helpful medical assistant.\n"
+    "- You guide patients/users for **general medical queries**.\n"
+    "- Politely decline any **non-medical requests**.\n"
+    "- You may reply politely to simple greetings like 'hi' or 'hello'.\n"
+    "- Always remind users that in **severe or emergency cases**, they should consult a doctor immediately.\n"
+    "- Your answers must always be **concise** and must not exceed **30 words**."
 )
 
-llm_model = AzureChatOpenAI(
-    azure_deployment=os.getenv("AZURE_OPENAI_DEPLOYMENT_NAME"),
-    azure_endpoint=os.getenv("AZURE_OPENAI_ENDPOINT"),
-    api_key=os.getenv("AZURE_OPENAI_KEY"),
-    api_version=os.getenv("AZURE_OPENAI_VERSION"),
-    temperature=0.3,
-    top_p=0.9,
-    max_tokens=300,
+# Initialize the FastAPI app
+app = FastAPI(
+    title="Gemini Medical Assistant API",
+    description="An API that uses Gemini to act as a medical assistant for general medical queries, "
+                "with short answers (max 40 words).",
+    version="1.0.0",
 )
 
-# Prompt template
-chat_prompt = ChatPromptTemplate.from_template("""
-You are a professional, empathetic, and knowledgeable medical assistant.
-Always provide medically accurate, clear, and concise information.
-If the question is outside medical scope, politely decline.
-If you don't know the answer, say "I don't know" instead of making up information.
-If you answer the question, then at last add a new line:
-In case of severe problem please consult a doctor.
+# Initialize the Gemini Pro model
+model = genai.GenerativeModel("gemini-1.5-flash")
 
-{chat_history}
-Patient's question: {question}
-Answer:
-""")
+# Define the request body model using Pydantic
+class PromptRequest(BaseModel):
+    prompt: str
 
-# Memory
-memory = ConversationSummaryBufferMemory(
-    llm=llm_model,
-    max_token_limit=1000,
-    return_messages=True,
-    input_key="question",
-    output_key="text",
-    memory_key="chat_history",
-)
-
-# LLM chain
-llm_chain = LLMChain(
-    llm=llm_model,
-    prompt=chat_prompt,
-    memory=memory,
-)
-
-
-class ChatRequest(BaseModel):
-    question: str
-
-@app.post("/chat")
-@app.post("/chat/")
-async def chat(chat_request: ChatRequest):
-    question = chat_request.question.strip()
-    if not question:
-        raise HTTPException(status_code=400, detail="Question cannot be empty.")
+# Define the API endpoint
+@app.post("/generate")
+async def generate_response(request: PromptRequest):
+    """
+    Accepts a user's prompt and returns a response from the Gemini model.
+    """
+    if not request.prompt.strip():
+        raise HTTPException(status_code=400, detail="Prompt cannot be empty.")
 
     try:
-        result = llm_chain.invoke({"question": question})
-        
-        clean_answer = " ".join(result["text"].split())
-        return {"answer": clean_answer}
+        # Send the system prompt + user prompt to Gemini
+        response = await model.generate_content_async(
+            [SYSTEM_PROMPT, request.prompt]
+        )
+
+        return {"response": response.text}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"LLM error: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"An error occurred: {str(e)}")
 
-
+# Define a root endpoint for health check
 @app.get("/")
-async def root():
-    return {"message": "Medical Assistant API is running."}
-
-# Entry point for local and Azure
-if __name__ == "__main__":
-    import uvicorn
-    port = int(os.environ.get("PORT", 8000))  
-    uvicorn.run("app:app", host="0.0.0.0", port=port)
+def read_root():
+    return {"status": "Medical Assistant API is running"}
