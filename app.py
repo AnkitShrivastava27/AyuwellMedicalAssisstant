@@ -1,19 +1,17 @@
 import os
 import google.generativeai as genai
 from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from dotenv import load_dotenv
 import uvicorn
 
-
 load_dotenv()
-
 
 API_KEY = os.getenv("GOOGLE_API_KEY")
 if not API_KEY:
     raise RuntimeError("GOOGLE_API_KEY environment variable not set.")
 genai.configure(api_key=API_KEY)
-
 
 SYSTEM_PROMPT = (
     "You are a helpful medical assistant.\n"
@@ -31,6 +29,14 @@ app = FastAPI(
     version="1.0.0",
 )
 
+# ✅ Add CORS middleware
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # allow all origins
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 model = genai.GenerativeModel("gemini-1.5-flash")
 
@@ -48,7 +54,6 @@ async def generate_response(request: PromptRequest):
         raise HTTPException(status_code=400, detail="Prompt cannot be empty.")
 
     try:
-    
         response = await model.generate_content_async(
             [SYSTEM_PROMPT, request.prompt]
         )
@@ -63,5 +68,4 @@ def read_root():
 
 
 if __name__ == "__main__":
-   
     uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
