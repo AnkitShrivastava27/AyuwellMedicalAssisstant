@@ -73,11 +73,15 @@ from fastapi import FastAPI
 from pydantic import BaseModel
 from huggingface_hub import InferenceClient
 import os
+import re
 from fastapi.middleware.cors import CORSMiddleware
+from typing import List
 
-# -------------------- App Setup --------------------
-app = FastAPI(title="Medical Chatbot API", version="1.0")
+app = FastAPI()
 
+# -----------------------------
+# CORS
+# -----------------------------
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -86,78 +90,104 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# -------------------- Hugging Face Client --------------------
-HF_API_KEY = os.getenv("HUGGINGFACEHUB_API_TOKEN")
-if not HF_API_KEY:
-    raise RuntimeError("Set HUGGINGFACEHUB_API_TOKEN environment variable")
+# -----------------------------
+# Hugging Face setup
+# -----------------------------
+api_key = os.getenv("HUGGINGFACEHUB_API_TOKEN")
+if not api_key:
+    raise RuntimeError("Set HUGGINGFACEHUB_API_TOKEN")
 
-client = InferenceClient(api_key=HF_API_KEY)
-
+client = InferenceClient(api_key=api_key)
 MODEL_NAME = "HuggingFaceH4/zephyr-7b-beta"
 
-# -------------------- Request Schema --------------------
+# -----------------------------
+# OpenAI-style schemas
+# -----------------------------
+class Message(BaseModel):
+    role: str
+    content: str
+
 class ChatRequest(BaseModel):
-    prompt: str
+    messages: List[Message]
 
-# -------------------- System Prompt --------------------
+# -----------------------------
+# System Prompt
+# -----------------------------
 SYSTEM_PROMPT = """
-You are a general medical information chatbot designed to educate, guide, reduce confusion, and encourage professional medical care.
-
-Your role:
-- Provide clear, evidence-based general health info
-- Explain symptoms, conditions, and health concepts simply
-- Offer lifestyle, diet, wellness, and preventive guidance
-- Help users understand possible causes and when to seek medical care
-- Reduce anxiety with structured, factual explanations
+You are a general medical information chatbot.
 
 Rules:
+- Provide educational health information only
 - Do NOT diagnose diseases
-- Do NOT prescribe medicines, treatments, or dosages
-- Do NOT claim certainty about any medical condition
-- Always encourage consulting a qualified healthcare professional
+- Do NOT prescribe medicines or dosages
+- Avoid certainty; use cautious language
+- Encourage consulting a qualified doctor when needed
 
-Response style:
-- Keep responses concise (~200 tokens)
-- Use bullet points where helpful
-- Maintain calm, supportive tone
-
-Disclaimer:
-- Information is educational, not medical advice
-- If condition could be serious, clearly suggest seeking professional care
+Style:
+- Calm, supportive, concise
+- Use bullet points if helpful
+- Avoid long explanations
 """
 
-# -------------------- API Endpoint --------------------
+# -----------------------------
+# Helper: OpenAI → Zephyr prompt
+# -----------------------------
+def build_zephyr_prompt(messages: List[Message]) -> str:
+    prompt = f"<System>\n{SYSTEM_PROMPT}\n</System>\n\n"
+
+    for msg in messages:
+        if msg.role == "user":
+            prompt += f"<User>\n{msg.content}\n</User>\n\n"
+        elif msg.role == "assistant":
+            prompt += f"<Assistant>\n{msg.content}\n</Assistant>\n\n"
+
+    prompt += "<Assistant>\n"
+    return prompt
+
+# -----------------------------
+# Chatbot Endpoint
+# -----------------------------
 @app.post("/generate")
 async def medical_chatbot(request: ChatRequest):
-    # Zephyr requires chat-style formatting inside the prompt
-    formatted_prompt = f"""
-<System>
-{SYSTEM_PROMPT}
-</System>
-
-<User>
-{request.prompt}
-</User>
-
-<Assistant>
-"""
+    zephyr_prompt = build_zephyr_prompt(request.messages)
 
     try:
         response = client.text_generation(
             model=MODEL_NAME,
-            prompt=formatted_prompt,
+            prompt=zephyr_prompt,
             max_new_tokens=200,
-            temperature=0.5,
+            temperature=0.4,
             do_sample=True,
             return_full_text=False
         )
 
-        return {"reply": response.strip()}
+        clean_response = re.sub(
+            r"<think>.*?</think>",
+            "",
+            response,
+            flags=re.DOTALL
+        ).strip()
+
+        return {
+            "choices": [
+                {
+                    "index": 0,
+                    "message": {
+                        "role": "assistant",
+                        "content": clean_response
+                    },
+                    "finish_reason": "stop"
+                }
+            ]
+        }
 
     except Exception as e:
         return {"error": str(e)}
 
-# -------------------- Health Check --------------------
+# -----------------------------
+# Health check
+# -----------------------------
 @app.get("/")
 def root():
     return {"message": "Medical Chatbot API is running!"}
+
