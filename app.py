@@ -75,6 +75,7 @@ from huggingface_hub import InferenceClient
 import os
 from fastapi.middleware.cors import CORSMiddleware
 
+# -------------------- App Setup --------------------
 app = FastAPI(title="Medical Chatbot API", version="1.0")
 
 app.add_middleware(
@@ -85,16 +86,20 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# -------------------- Hugging Face Client --------------------
 HF_API_KEY = os.getenv("HUGGINGFACEHUB_API_TOKEN")
 if not HF_API_KEY:
     raise RuntimeError("Set HUGGINGFACEHUB_API_TOKEN environment variable")
+
 client = InferenceClient(api_key=HF_API_KEY)
 
 MODEL_NAME = "HuggingFaceH4/zephyr-7b-beta"
 
+# -------------------- Request Schema --------------------
 class ChatRequest(BaseModel):
     prompt: str
 
+# -------------------- System Prompt --------------------
 SYSTEM_PROMPT = """
 You are a general medical information chatbot designed to educate, guide, reduce confusion, and encourage professional medical care.
 
@@ -121,27 +126,38 @@ Disclaimer:
 - If condition could be serious, clearly suggest seeking professional care
 """
 
+# -------------------- API Endpoint --------------------
 @app.post("/generate")
 async def medical_chatbot(request: ChatRequest):
-    messages = [
-        {"role": "system", "content": SYSTEM_PROMPT},
-        {"role": "user", "content": request.prompt}
-    ]
+    # Zephyr requires chat-style formatting inside the prompt
+    formatted_prompt = f"""
+<System>
+{SYSTEM_PROMPT}
+</System>
+
+<User>
+{request.prompt}
+</User>
+
+<Assistant>
+"""
 
     try:
-        response = client.chat.completions.create(
+        response = client.text_generation(
             model=MODEL_NAME,
-            messages=messages,
-            max_tokens=200,  # <-- correct param
-            temperature=0.5
+            prompt=formatted_prompt,
+            max_new_tokens=200,
+            temperature=0.5,
+            do_sample=True,
+            return_full_text=False
         )
 
-        reply = response.choices[0].message.content
-        return {"reply": reply}
+        return {"reply": response.strip()}
 
     except Exception as e:
         return {"error": str(e)}
 
+# -------------------- Health Check --------------------
 @app.get("/")
 def root():
     return {"message": "Medical Chatbot API is running!"}
