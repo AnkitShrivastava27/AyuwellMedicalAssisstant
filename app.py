@@ -73,15 +73,10 @@ from fastapi import FastAPI
 from pydantic import BaseModel
 from huggingface_hub import InferenceClient
 import os
-
 from fastapi.middleware.cors import CORSMiddleware
 
-# -----------------------------
-# FastAPI setup
-# -----------------------------
 app = FastAPI(title="Medical Chatbot API", version="1.0")
 
-# Enable CORS for frontend
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -90,9 +85,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# -----------------------------
-# Hugging Face setup
-# -----------------------------
 HF_API_KEY = os.getenv("HUGGINGFACEHUB_API_TOKEN")
 if not HF_API_KEY:
     raise RuntimeError("Set HUGGINGFACEHUB_API_TOKEN environment variable")
@@ -100,15 +92,9 @@ client = InferenceClient(api_key=HF_API_KEY)
 
 MODEL_NAME = "HuggingFaceH4/zephyr-7b-beta"
 
-# -----------------------------
-# Request model
-# -----------------------------
 class ChatRequest(BaseModel):
-    prompt: str  # user input
+    prompt: str
 
-# -----------------------------
-# System prompt
-# -----------------------------
 SYSTEM_PROMPT = """
 You are a general medical information chatbot designed to educate, guide, reduce confusion, and encourage professional medical care.
 
@@ -135,9 +121,6 @@ Disclaimer:
 - If condition could be serious, clearly suggest seeking professional care
 """
 
-# -----------------------------
-# Chat endpoint
-# -----------------------------
 @app.post("/generate")
 async def medical_chatbot(request: ChatRequest):
     messages = [
@@ -149,7 +132,7 @@ async def medical_chatbot(request: ChatRequest):
         response = client.chat.completions.create(
             model=MODEL_NAME,
             messages=messages,
-            max_output_tokens=200,  # approx 200 tokens
+            max_tokens=200,  # <-- correct param
             temperature=0.5
         )
 
@@ -159,9 +142,6 @@ async def medical_chatbot(request: ChatRequest):
     except Exception as e:
         return {"error": str(e)}
 
-# -----------------------------
-# Health check
-# -----------------------------
 @app.get("/")
 def root():
     return {"message": "Medical Chatbot API is running!"}
