@@ -38,7 +38,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-model = genai.GenerativeModel("gemini-pro")
+model = genai.GenerativeModel("models/text-bison-001")
 
 
 class PromptRequest(BaseModel):
