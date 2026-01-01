@@ -75,7 +75,6 @@ from huggingface_hub import InferenceClient
 import os
 import re
 from fastapi.middleware.cors import CORSMiddleware
-from typing import List
 
 # -----------------------------
 # FastAPI setup
@@ -85,7 +84,7 @@ app = FastAPI(title="Medical Chatbot API", version="1.0")
 # Enable CORS for frontend
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # allow all origins
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -105,8 +104,7 @@ MODEL_NAME = "HuggingFaceH4/zephyr-7b-beta"
 # Request model
 # -----------------------------
 class ChatRequest(BaseModel):
-    message: str
-    history: List[str] = []
+    prompt: str  # only input field
 
 # -----------------------------
 # System prompt
@@ -143,11 +141,7 @@ Safety & disclaimer:
 @app.post("/generate")
 async def medical_chatbot(request: ChatRequest):
     conversation = "<|system|>\n" + SYSTEM_PROMPT + "\n"
-
-    for msg in request.history:
-        conversation += f"<|user|>\n{msg}\n"
-
-    conversation += f"<|user|>\n{request.message}\n<|assistant|>\n"
+    conversation += f"<|user|>\n{request.prompt}\n<|assistant|>\n"
 
     try:
         response = client.text_generation(
@@ -158,7 +152,7 @@ async def medical_chatbot(request: ChatRequest):
         )
 
         reply = response.generated_text
-        # Remove internal tags if any
+        # Clean any internal tags
         reply = re.sub(r"<think>.*?</think>", "", reply, flags=re.DOTALL).strip()
 
         return {"reply": reply}
