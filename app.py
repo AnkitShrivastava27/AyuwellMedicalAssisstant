@@ -71,9 +71,9 @@
 #     uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
 from fastapi import FastAPI
 from pydantic import BaseModel
-from huggingface_hub import InferenceClient
 import os
 import re
+import requests
 from fastapi.middleware.cors import CORSMiddleware
 
 app = FastAPI()
@@ -92,12 +92,17 @@ app.add_middleware(
 # -----------------------------
 # Hugging Face setup
 # -----------------------------
-api_key = os.getenv("HUGGINGFACEHUB_API_TOKEN")
-if not api_key:
+HF_API_KEY = os.getenv("HUGGINGFACEHUB_API_TOKEN")
+if not HF_API_KEY:
     raise RuntimeError("Set HUGGINGFACEHUB_API_TOKEN")
 
-client = InferenceClient(api_key=api_key)
 MODEL_NAME = "HuggingFaceH4/zephyr-7b-beta"
+HF_URL = f"https://api-inference.huggingface.co/models/{MODEL_NAME}"
+
+HEADERS = {
+    "Authorization": f"Bearer {HF_API_KEY}",
+    "Content-Type": "application/json"
+}
 
 # -----------------------------
 # Request schema
@@ -120,10 +125,11 @@ SYSTEM_PROMPT = (
 )
 
 # -----------------------------
-# Chat Endpoint (RAW conversational task)
+# Chat Endpoint → /generate
 # -----------------------------
 @app.post("/generate")
-async def medical_chatbot(request: ChatRequest):
+async def generate(request: ChatRequest):
+
     payload = {
         "inputs": {
             "text": f"{SYSTEM_PROMPT}\n\nUser: {request.prompt}",
@@ -137,15 +143,18 @@ async def medical_chatbot(request: ChatRequest):
     }
 
     try:
-        response = client.post(
-            model=MODEL_NAME,
-            json=payload
+        response = requests.post(
+            HF_URL,
+            headers=HEADERS,
+            json=payload,
+            timeout=60
         )
 
-        # HF conversational response format
-        reply = response.get("generated_text", "")
+        if response.status_code != 200:
+            return {"error": response.text}
 
-        # Cleanup if model leaks hidden thoughts
+        data = response.json()
+        reply = data.get("generated_text", "")
         reply = re.sub(r"<think>.*?</think>", "", reply, flags=re.DOTALL).strip()
 
         return {"reply": reply}
