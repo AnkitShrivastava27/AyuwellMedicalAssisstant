@@ -140,7 +140,7 @@ Safety & disclaimer:
 # -----------------------------
 # Chat endpoint
 # -----------------------------
-@app.post("/chat")
+@app.post("/generate")
 async def medical_chatbot(request: ChatRequest):
     conversation = "<|system|>\n" + SYSTEM_PROMPT + "\n"
 
