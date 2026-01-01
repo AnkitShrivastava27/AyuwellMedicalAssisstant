@@ -73,7 +73,7 @@ from fastapi import FastAPI
 from pydantic import BaseModel
 from huggingface_hub import InferenceClient
 import os
-import re
+
 from fastapi.middleware.cors import CORSMiddleware
 
 # -----------------------------
@@ -104,7 +104,7 @@ MODEL_NAME = "HuggingFaceH4/zephyr-7b-beta"
 # Request model
 # -----------------------------
 class ChatRequest(BaseModel):
-    prompt: str  # only input field
+    prompt: str  # user input
 
 # -----------------------------
 # System prompt
@@ -112,27 +112,27 @@ class ChatRequest(BaseModel):
 SYSTEM_PROMPT = """
 You are a general medical information chatbot designed to educate, guide, reduce confusion, and encourage professional medical care.
 
-Your role is to:
-- Provide clear, evidence-based general health information
-- Explain symptoms, conditions, and health concepts in simple language
-- Offer lifestyle, diet, wellness, and preventive health guidance
-- Help users understand possible causes and when medical attention may be required
-- Reduce anxiety by giving structured, factual explanations
+Your role:
+- Provide clear, evidence-based general health info
+- Explain symptoms, conditions, and health concepts simply
+- Offer lifestyle, diet, wellness, and preventive guidance
+- Help users understand possible causes and when to seek medical care
+- Reduce anxiety with structured, factual explanations
 
-Strict rules:
+Rules:
 - Do NOT diagnose diseases
 - Do NOT prescribe medicines, treatments, or dosages
 - Do NOT claim certainty about any medical condition
-- Always encourage consulting a qualified healthcare professional when symptoms are serious, persistent, or unclear
+- Always encourage consulting a qualified healthcare professional
 
 Response style:
 - Keep responses concise (~200 tokens)
 - Use bullet points where helpful
-- Maintain a calm, supportive, and non-alarming tone
+- Maintain calm, supportive tone
 
-Safety & disclaimer:
-- Include gentle reminders that information is educational, not medical advice
-- If a condition could be serious, clearly suggest seeking professional medical care
+Disclaimer:
+- Information is educational, not medical advice
+- If condition could be serious, clearly suggest seeking professional care
 """
 
 # -----------------------------
@@ -140,21 +140,20 @@ Safety & disclaimer:
 # -----------------------------
 @app.post("/generate")
 async def medical_chatbot(request: ChatRequest):
-    conversation = "<|system|>\n" + SYSTEM_PROMPT + "\n"
-    conversation += f"<|user|>\n{request.prompt}\n<|assistant|>\n"
+    messages = [
+        {"role": "system", "content": SYSTEM_PROMPT},
+        {"role": "user", "content": request.prompt}
+    ]
 
     try:
-        response = client.text_generation(
+        response = client.chat.completions.create(
             model=MODEL_NAME,
-            prompt=conversation,
-            max_new_tokens=200,  # approx token limit
-            temperature=0.5,
+            messages=messages,
+            max_output_tokens=200,  # approx 200 tokens
+            temperature=0.5
         )
 
-        reply = response.generated_text
-        # Clean any internal tags
-        reply = re.sub(r"<think>.*?</think>", "", reply, flags=re.DOTALL).strip()
-
+        reply = response.choices[0].message.content
         return {"reply": reply}
 
     except Exception as e:
