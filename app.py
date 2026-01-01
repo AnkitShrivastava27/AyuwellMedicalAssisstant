@@ -75,7 +75,6 @@ from huggingface_hub import InferenceClient
 import os
 import re
 from fastapi.middleware.cors import CORSMiddleware
-from typing import List
 
 app = FastAPI()
 
@@ -101,14 +100,10 @@ client = InferenceClient(api_key=api_key)
 MODEL_NAME = "HuggingFaceH4/zephyr-7b-beta"
 
 # -----------------------------
-# OpenAI-style schemas
+# Request schema (PROMPT ONLY)
 # -----------------------------
-class Message(BaseModel):
-    role: str
-    content: str
-
 class ChatRequest(BaseModel):
-    messages: List[Message]
+    prompt: str
 
 # -----------------------------
 # System Prompt
@@ -125,31 +120,31 @@ Rules:
 
 Style:
 - Calm, supportive, concise
-- Use bullet points if helpful
 - Avoid long explanations
 """
 
 # -----------------------------
-# Helper: OpenAI → Zephyr prompt
+# Helper: prompt → Zephyr format
 # -----------------------------
-def build_zephyr_prompt(messages: List[Message]) -> str:
-    prompt = f"<System>\n{SYSTEM_PROMPT}\n</System>\n\n"
+def build_zephyr_prompt(user_prompt: str) -> str:
+    return f"""
+<System>
+{SYSTEM_PROMPT}
+</System>
 
-    for msg in messages:
-        if msg.role == "user":
-            prompt += f"<User>\n{msg.content}\n</User>\n\n"
-        elif msg.role == "assistant":
-            prompt += f"<Assistant>\n{msg.content}\n</Assistant>\n\n"
+<User>
+{user_prompt}
+</User>
 
-    prompt += "<Assistant>\n"
-    return prompt
+<Assistant>
+"""
 
 # -----------------------------
 # Chatbot Endpoint
 # -----------------------------
-@app.post("/generate")
+@app.post("/chat")
 async def medical_chatbot(request: ChatRequest):
-    zephyr_prompt = build_zephyr_prompt(request.messages)
+    zephyr_prompt = build_zephyr_prompt(request.prompt)
 
     try:
         response = client.text_generation(
@@ -169,16 +164,7 @@ async def medical_chatbot(request: ChatRequest):
         ).strip()
 
         return {
-            "choices": [
-                {
-                    "index": 0,
-                    "message": {
-                        "role": "assistant",
-                        "content": clean_response
-                    },
-                    "finish_reason": "stop"
-                }
-            ]
+            "reply": clean_response
         }
 
     except Exception as e:
@@ -190,4 +176,3 @@ async def medical_chatbot(request: ChatRequest):
 @app.get("/")
 def root():
     return {"message": "Medical Chatbot API is running!"}
-
