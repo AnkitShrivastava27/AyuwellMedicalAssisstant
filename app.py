@@ -108,64 +108,42 @@ class ChatRequest(BaseModel):
 # -----------------------------
 # System Prompt
 # -----------------------------
-SYSTEM_PROMPT = """
-You are a general medical information chatbot.
-
-Rules:
-- Provide educational health information only
-- Do NOT diagnose diseases
-- Do NOT prescribe medicines or dosages
-- Avoid certainty; use cautious language
-- Encourage consulting a qualified doctor when needed
-
-Style:
-- Calm, supportive, concise
-- Avoid long explanations
-"""
+SYSTEM_PROMPT = (
+    "You are a general medical information chatbot.\n"
+    "Rules:\n"
+    "- Provide educational health information only\n"
+    "- Do NOT diagnose diseases\n"
+    "- Do NOT prescribe medicines or dosages\n"
+    "- Avoid certainty; use cautious language\n"
+    "- Encourage consulting a qualified doctor when needed\n"
+    "Style: calm, concise, supportive\n"
+)
 
 # -----------------------------
-# Helper: prompt → Zephyr format
+# Chatbot Endpoint (CONVERSATIONAL)
 # -----------------------------
-def build_zephyr_prompt(user_prompt: str) -> str:
-    return f"""
-<System>
-{SYSTEM_PROMPT}
-</System>
-
-<User>
-{user_prompt}
-</User>
-
-<Assistant>
-"""
-
-# -----------------------------
-# Chatbot Endpoint
-# -----------------------------
-@app.post("/chat")
+@app.post("/generate")
 async def medical_chatbot(request: ChatRequest):
-    zephyr_prompt = build_zephyr_prompt(request.prompt)
-
     try:
-        response = client.text_generation(
+        response = client.conversational(
             model=MODEL_NAME,
-            prompt=zephyr_prompt,
-            max_new_tokens=200,
-            temperature=0.4,
-            do_sample=True,
-            return_full_text=False
+            inputs={
+                "past_user_inputs": [],
+                "generated_responses": [],
+                "text": f"{SYSTEM_PROMPT}\n\nUser: {request.prompt}"
+            },
+            parameters={
+                "max_new_tokens": 200,
+                "temperature": 0.4
+            }
         )
 
-        clean_response = re.sub(
-            r"<think>.*?</think>",
-            "",
-            response,
-            flags=re.DOTALL
-        ).strip()
+        reply = response["generated_text"]
 
-        return {
-            "reply": clean_response
-        }
+        # Safety cleanup (if any hidden thoughts appear)
+        reply = re.sub(r"<think>.*?</think>", "", reply, flags=re.DOTALL).strip()
+
+        return {"reply": reply}
 
     except Exception as e:
         return {"error": str(e)}
