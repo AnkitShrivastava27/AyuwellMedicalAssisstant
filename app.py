@@ -100,7 +100,7 @@ client = InferenceClient(api_key=api_key)
 MODEL_NAME = "HuggingFaceH4/zephyr-7b-beta"
 
 # -----------------------------
-# Request schema (PROMPT ONLY)
+# Request schema
 # -----------------------------
 class ChatRequest(BaseModel):
     prompt: str
@@ -120,27 +120,32 @@ SYSTEM_PROMPT = (
 )
 
 # -----------------------------
-# Chatbot Endpoint (CONVERSATIONAL)
+# Chat Endpoint (RAW conversational task)
 # -----------------------------
 @app.post("/generate")
 async def medical_chatbot(request: ChatRequest):
+    payload = {
+        "inputs": {
+            "text": f"{SYSTEM_PROMPT}\n\nUser: {request.prompt}",
+            "past_user_inputs": [],
+            "generated_responses": []
+        },
+        "parameters": {
+            "max_new_tokens": 200,
+            "temperature": 0.4
+        }
+    }
+
     try:
-        response = client.conversational(
+        response = client.post(
             model=MODEL_NAME,
-            inputs={
-                "past_user_inputs": [],
-                "generated_responses": [],
-                "text": f"{SYSTEM_PROMPT}\n\nUser: {request.prompt}"
-            },
-            parameters={
-                "max_new_tokens": 200,
-                "temperature": 0.4
-            }
+            json=payload
         )
 
-        reply = response["generated_text"]
+        # HF conversational response format
+        reply = response.get("generated_text", "")
 
-        # Safety cleanup (if any hidden thoughts appear)
+        # Cleanup if model leaks hidden thoughts
         reply = re.sub(r"<think>.*?</think>", "", reply, flags=re.DOTALL).strip()
 
         return {"reply": reply}
