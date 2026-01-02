@@ -1,170 +1,61 @@
-# import os
-# import google.generativeai as genai
-# from fastapi import FastAPI, HTTPException
-# from fastapi.middleware.cors import CORSMiddleware
-# from pydantic import BaseModel
-# from dotenv import load_dotenv
-# import uvicorn
-
-# load_dotenv()
-
-# API_KEY = os.getenv("GOOGLE_API_KEY")
-# if not API_KEY:
-#     raise RuntimeError("GOOGLE_API_KEY environment variable not set.")
-# genai.configure(api_key=API_KEY)
-
-# SYSTEM_PROMPT = (
-#     "You are a helpful medical assistant.\n"
-#     "- You guide patients/users for **general medical queries**.\n"
-#     "- Politely decline any **non-medical requests**.\n"
-#     "- You may reply politely to simple greetings like 'hi' or 'hello'.\n"
-#     "- Always remind users that in **severe or emergency cases**, they should consult a doctor immediately.\n"
-#     "- Your answers must always be **concise** and must not exceed **40 words**."
-# )
-
-# app = FastAPI(
-#     title="Gemini Medical Assistant API",
-#     description="An API that uses Gemini to act as a medical assistant for general medical queries, "
-#                 "with short answers (max 40 words).",
-#     version="1.0.0",
-# )
-
-# # ✅ Add CORS middleware
-# app.add_middleware(
-#     CORSMiddleware,
-#     allow_origins=["*"],  # allow all origins
-#     allow_credentials=True,
-#     allow_methods=["*"],
-#     allow_headers=["*"],
-# )
-
-# model = genai.GenerativeModel("models/text-bison-001")
-
-
-# class PromptRequest(BaseModel):
-#     prompt: str
-
-
-# @app.post("/generate")
-# async def generate_response(request: PromptRequest):
-#     """
-#     Accepts a user's prompt and returns a response from the Gemini model.
-#     """
-#     if not request.prompt.strip():
-#         raise HTTPException(status_code=400, detail="Prompt cannot be empty.")
-
-#     try:
-#         response = await model.generate_content_async(
-#             [SYSTEM_PROMPT, request.prompt]
-#         )
-#         return {"response": response.text}
-#     except Exception as e:
-#         raise HTTPException(status_code=500, detail=f"An error occurred: {str(e)}")
-
-
-# @app.get("/")
-# def read_root():
-#     return {"status": "Medical Assistant API is running"}
-
-
-# if __name__ == "__main__":
-#     uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
-from fastapi import FastAPI
-from pydantic import BaseModel
 import os
-import re
-import requests
-from fastapi.middleware.cors import CORSMiddleware
+import google.generativeai as genai
+from fastapi import FastAPI, HTTPException
+from pydantic import BaseModel
+from dotenv import load_dotenv
 
-app = FastAPI()
+load_dotenv()
 
-# -----------------------------
-# CORS
-# -----------------------------
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+# Configure Gemini
+api_key = os.getenv("GOOGLE_API_KEY")
+if not api_key:
+    raise RuntimeError("GOOGLE_API_KEY not found.")
+
+genai.configure(api_key=api_key)
+
+# SYSTEM INSTRUCTION: Medical Assistant Role
+# We include instructions for empathy, clarity, and safety.
+SYSTEM_PROMPT = (
+    "Role: You are a helpful, empathetic, and knowledgeable Medical Assistant. "
+    "Task: Answer health-related queries, explain medical conditions in simple terms, "
+    "and provide general wellness advice based on established medical guidelines. "
+    "Guidelines: "
+    "1. Always include a disclaimer that you are an AI, not a doctor. "
+    "2. If symptoms sound life-threatening (e.g., chest pain, difficulty breathing), "
+    "immediately advise the user to call emergency services. "
+    "3. Use Markdown for clarity (bullet points for symptoms, bold text for key terms). "
+    "4. Avoid overly dense jargon; explain things like a helpful peer. "
+    "5. Be concise but thorough."
 )
 
-# -----------------------------
-# Hugging Face setup
-# -----------------------------
-HF_API_KEY = os.getenv("HUGGINGFACEHUB_API_TOKEN")
-if not HF_API_KEY:
-    raise RuntimeError("Set HUGGINGFACEHUB_API_TOKEN")
+app = FastAPI(title="Gemini Medical Assistant API")
 
-MODEL_NAME = "HuggingFaceH4/zephyr-7b-beta"
-HF_URL = f"https://api-inference.huggingface.co/models/{MODEL_NAME}"
+# Initializing Gemini 2.0 Flash (Stable 2026)
+model = genai.GenerativeModel(
+    
+    model_name='gemini-2.5-flash-lite',
+    system_instruction=SYSTEM_PROMPT
+)
 
-HEADERS = {
-    "Authorization": f"Bearer {HF_API_KEY}",
-    "Content-Type": "application/json"
-}
-
-# -----------------------------
-# Request schema
-# -----------------------------
-class ChatRequest(BaseModel):
+class MedicalQuery(BaseModel):
     prompt: str
 
-# -----------------------------
-# System Prompt
-# -----------------------------
-SYSTEM_PROMPT = (
-    "You are a general medical information chatbot.\n"
-    "Rules:\n"
-    "- Provide educational health information only\n"
-    "- Do NOT diagnose diseases\n"
-    "- Do NOT prescribe medicines or dosages\n"
-    "- Avoid certainty; use cautious language\n"
-    "- Encourage consulting a qualified doctor when needed\n"
-    "Style: calm, concise, supportive\n"
-)
-
-# -----------------------------
-# Chat Endpoint → /generate
-# -----------------------------
 @app.post("/generate")
-async def generate(request: ChatRequest):
-
-    payload = {
-        "inputs": {
-            "text": f"{SYSTEM_PROMPT}\n\nUser: {request.prompt}",
-            "past_user_inputs": [],
-            "generated_responses": []
-        },
-        "parameters": {
-            "max_new_tokens": 200,
-            "temperature": 0.4
-        }
-    }
+async def medical_consult(request: MedicalQuery):
+    if not request.prompt.strip():
+        raise HTTPException(status_code=400, detail="Please enter your symptoms or question.")
 
     try:
-        response = requests.post(
-            HF_URL,
-            headers=HEADERS,
-            json=payload,
-            timeout=60
+        # Use a slightly higher temperature (0.7) for a more natural, empathetic tone
+        response = model.generate_content(
+            request.prompt,
+            generation_config={"temperature": 0.7, "max_output_tokens": 2048}
         )
 
-        if response.status_code != 200:
-            return {"error": response.text}
+        if not response.text:
+            return {"response": "I'm sorry, I cannot provide information on that specific topic due to safety guidelines."}
 
-        data = response.json()
-        reply = data.get("generated_text", "")
-        reply = re.sub(r"<think>.*?</think>", "", reply, flags=re.DOTALL).strip()
-
-        return {"reply": reply}
+        return {"response": response.text.strip()}
 
     except Exception as e:
-        return {"error": str(e)}
-
-# -----------------------------
-# Health check
-# -----------------------------
-@app.get("/")
-def root():
-    return {"message": "Medical Chatbot API is running!"}
+        raise HTTPException(status_code=500, detail=f"Assistant Error: {str(e)}")
